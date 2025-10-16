@@ -1,65 +1,58 @@
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart, Command
-import json, os
+from aiogram import Bot, Dispatcher, types, Router
+from aiogram.filters import Command
+from aiogram.types import Message
+from db import init_db, save_credentials, get_credentials
 from parser import get_grades
 
-bot = Bot(token=os.getenv("BOT_TOKEN"))
-dp = Dispatcher()
-
-USERS_FILE = "users.json"
-
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
-
-from aiogram import Router, types
-from parser import get_grades_from_html
-
 router = Router()
+pending_login = {}
+pending_password = {}
 
-@router.message(commands=["grades"])
-async def send_grades(message: types.Message):
-    with open("Журнал.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
+@router.message(Command("start"))
+async def start_handler(message: Message):
+    await message.answer(
+        "👋 Привет! Я помогу тебе посмотреть твои оценки.\n"
+        "👋 Сәлем! Мен сенің бағаларыңды көрсетемін.\n\n"
+        "🆔 Введи свой *ЖСН (ИИН)* номер:\n"
+        "🆔 Өзінің *ЖСН (ИИН)* нөміріңді енгіз:"
+    )
+    pending_login[message.from_user.id] = True
 
-    result = get_grades_from_html(html_content)
+@router.message(lambda m: pending_login.get(m.from_user.id))
+async def handle_login(message: Message):
+    user_id = message.from_user.id
+    pending_login.pop(user_id, None)
+    pending_password[user_id] = message.text.strip()
+    await message.answer(
+        "🔒 Теперь введи свой *пароль*:\n"
+        "🔒 Енді өзіңнің *құпия сөзіңді* енгіз:"
+    )
+
+@router.message(lambda m: pending_password.get(m.from_user.id))
+async def handle_password(message: Message):
+    user_id = message.from_user.id
+    login = pending_password.pop(user_id)
+    password = message.text.strip()
+
+    save_credentials(user_id, login, password)
+    await message.answer(
+        "✅ Данные сохранены! Теперь можешь написать /grades чтобы увидеть свои оценки.\n"
+        "✅ Мәліметтер сақталды! Енді /grades деп жаз — бағаларыңды көру үшін."
+    )
+
+@router.message(Command("grades"))
+async def grades_handler(message: Message):
+    login, password = get_credentials(message.from_user.id)
+    if not login:
+        await message.answer(
+            "⚠️ Сначала введи ЖСН и пароль командой /start.\n"
+            "⚠️ Алдымен /start арқылы ЖСН және құпия сөз енгіз."
+        )
+        return
+
+    await message.answer(
+        "⏳ Загружаю твои оценки...\n"
+        "⏳ Бағаларыңыз жүктелуде..."
+    )
+    result = get_grades(login, password)
     await message.answer(result, parse_mode="Markdown")
-
-
-@dp.message(CommandStart())
-async def start(message: types.Message):
-    await message.answer("Привет 👋\nОтправь логин и пароль через пробел.\nПример:\n`ivan123 mypassword`", parse_mode="Markdown")
-
-@dp.message(F.text)
-async def save_credentials(message: types.Message):
-    users = load_users()
-    parts = message.text.strip().split()
-    if len(parts) != 2:
-        await message.answer("Формат неверен. Отправь логин и пароль через пробел.")
-        return
-    login, password = parts
-    users[str(message.from_user.id)] = {"login": login, "password": password}
-    save_users(users)
-    await message.answer("✅ Данные сохранены! Теперь введи /grades чтобы получить оценки.")
-
-@dp.message(Command("grades"))
-async def grades(message: types.Message):
-    users = load_users()
-    if str(message.from_user.id) not in users:
-        await message.answer("⚠️ Сначала введи логин и пароль (см. /start).")
-        return
-    creds = users[str(message.from_user.id)]
-    result = get_grades(creds["login"], creds["password"])
-
-    if "error" in result:
-        await message.answer(f"❌ {result['error']}")
-        return
-
-    text = "📚 *Твои оценки:*\n\n" + "\n".join([f"• {s}: {g}" for s, g in result["grades"]])
-    await message.answer(text, parse_mode="Markdown")
