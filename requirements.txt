@@ -1,6 +1,6 @@
-aiogram==3.4.1
+aiogram==3.4.2.dev1
+pydantic==3.0.0b2
 fastapi==0.115.0
 uvicorn==0.32.0
 requests==2.32.3
 beautifulsoup4==4.12.3
-
