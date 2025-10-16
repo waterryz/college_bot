@@ -1,3 +1,4 @@
+--only-binary :all:
 aiogram==3.4.1
 fastapi==0.115.0
 uvicorn==0.32.0
@@ -5,3 +6,4 @@ requests==2.32.3
 beautifulsoup4==4.12.3
 cloudscraper==1.2.71
 cryptography==43.0.3
+pydantic==2.9.2
