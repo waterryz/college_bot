@@ -1,5 +1,6 @@
 --only-binary :all:
-aiogram==3.4.1
+
+aiogram==3.17.0
 fastapi==0.115.0
 uvicorn==0.32.0
 requests==2.32.3
