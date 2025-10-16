@@ -1,63 +1,62 @@
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.state import State, StatesGroup
-from db import save_credentials, get_credentials
-from parser import get_grades
 import asyncio
-import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command
+from parser import get_grades
+from db import init_db, save_credentials, get_credentials
 import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-logging.basicConfig(level=logging.INFO)
+if not BOT_TOKEN:
+    raise ValueError("❌ Укажи BOT_TOKEN в Render Environment Variables!")
 
-class Form(StatesGroup):
-    login = State()
-    password = State()
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
 
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message, state: FSMContext):
-    await message.answer("👋 Привет! Я помогу тебе посмотреть твои оценки.\n\n"
-                         "👋 Сәлем! Мен сенің бағаларыңды көрсетемін.\n\n"
-                         "🆔 Введи свой *ЖСН (ИИН)* номер:\n"
-                         "🆔 Өзінің *ЖСН (ИИН)* нөміріңді енгіз:")
-    await state.set_state(Form.login)
+async def start_command(message: types.Message):
+    await message.answer(
+        "👋 Сәлем! / Привет!\n\n"
+        "Бұл бот Snation College сайтындағы журналдан бағаларды көрсетеді.\n"
+        "Чтобы начать, отправь свой ИИН и пароль через пробел:\n\n"
+        "_Пример:_ `123456789012 12345678`",
+        parse_mode="Markdown"
+    )
 
-@dp.message(Form.login)
-async def process_login(message: types.Message, state: FSMContext):
-    await state.update_data(login=message.text)
-    await message.answer("🔒 Теперь введи свой *пароль*:\n"
-                         "🔒 Енді өзіңнің *құпия сөзіңді* енгіз:")
-    await state.set_state(Form.password)
 
-@dp.message(Form.password)
-async def process_password(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    login = data["login"]
-    password = message.text
+@dp.message()
+async def handle_login(message: types.Message):
+    """Основная логика: принимает ИИН и пароль, проверяет, сохраняет, парсит оценки"""
+    try:
+        parts = message.text.strip().split()
+        if len(parts) != 2:
+            await message.answer("⚠️ Введи ИИН и пароль через пробел.\nПример: `123456789012 12345678`", parse_mode="Markdown")
+            return
 
-    save_credentials(message.from_user.id, login, password)
-    await state.clear()
-    await message.answer("✅ Данные сохранены! Теперь можешь написать /grades чтобы увидеть свои оценки.\n"
-                         "✅ Мәліметтер сақталды! Енді /grades деп жаз — бағаларыңды көру үшін.")
+        iin, password = parts
+        user_id = message.from_user.id
 
-@dp.message(Command("grades"))
-async def get_user_grades(message: types.Message):
-    login, password = get_credentials(message.from_user.id)
-    if not login or not password:
-        await message.answer("⚠️ Сначала введи свой ИИН и пароль через /start.")
-        return
+        await message.answer("🔄 Қосылуда... / Подключаюсь к сайту SmartNation...")
 
-    await message.answer("⏳ Загружаю твои оценки...\n⏳ Бағаларыңыз жүктелуде...")
-    result = get_grades(login, password)
-    await message.answer(result, parse_mode="Markdown")
+        result = get_grades(iin, password)
+
+        if "❌" in result or "⚠️" in result:
+            await message.answer(result)
+            return
+
+        save_credentials(user_id, iin, password)
+        await message.answer(result, parse_mode="Markdown")
+
+    except Exception as e:
+        await message.answer(f"⚠️ Қате орын алды / Произошла ошибка: {e}")
+
 
 async def main():
+    print("🤖 Бот успешно запущен (polling mode)...")
+    init_db()
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
