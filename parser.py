@@ -1,41 +1,24 @@
-import requests
 from bs4 import BeautifulSoup
 
-def get_grades(username: str, password: str):
-    session = requests.Session()
+def get_grades_from_html(html_content: str):
+    soup = BeautifulSoup(html_content, 'html.parser')
 
-    login_url = "https://college.snation.kz/login/index.php"
-    journal_url = "https://college.snation.kz/grade/report/overview/index.php"
-
-    # Авторизация
-    payload = {
-        "username": username,
-        "password": password
-    }
-    response = session.post(login_url, data=payload)
-
-    if "Неверный логин" in response.text or "Invalid" in response.text:
-        return {"error": "Неверный логин или пароль"}
-
-    # Переход к журналу
-    journal_page = session.get(journal_url)
-    soup = BeautifulSoup(journal_page.text, "html.parser")
-
-    # Парсинг таблицы оценок
-    grades = []
-    table = soup.find("table", class_="generaltable")
+    # Находим таблицу с оценками
+    table = soup.find('table', class_='sc-journal__table--scroll-part')
     if not table:
-        return {"error": "Не удалось найти таблицу с оценками"}
+        return "⚠️ Таблица оценок не найдена."
 
-    for row in table.find_all("tr")[1:]:
-        cols = [c.text.strip() for c in row.find_all("td")]
-        if len(cols) >= 2:
-            subject = cols[0]
-            grade = cols[1]
-            grades.append((subject, grade))
+    # Извлекаем даты
+    head_row = table.find('tr', class_='sc-journal__table--head-row')
+    dates = [cell.get_text(strip=True) for cell in head_row.find_all('div', class_='sc-journal__table--cell-value')]
 
-    if not grades:
-        return {"error": "Оценок не найдено"}
+    # Извлекаем оценки (вторая строка)
+    data_row = table.find('tr', class_='sc-journal__table--row')
+    grades = [cell.get_text(strip=True) for cell in data_row.find_all('div', class_='sc-journal__table--cell-value')]
 
-    return {"grades": grades}
+    # Формируем результат
+    result = "📘 *Журнал оценок:*\n\n"
+    for date, grade in zip(dates, grades):
+        result += f"📅 {date}: {grade if grade else '—'}\n"
 
+    return result
