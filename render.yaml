@@ -3,9 +3,9 @@ services:
     name: college-bot
     env: python
     buildCommand: |
-  curl https://sh.rustup.rs -sSf | sh -s -- -y
-  source $HOME/.cargo/env
-  pip install -r requirements.txt
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      source $HOME/.cargo/env
+      pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
     plan: free
     envVars:
@@ -13,4 +13,5 @@ services:
         sync: false
       - key: WEBHOOK_URL
         sync: false
-
+      - key: ENCRYPTION_KEY
+        sync: false
