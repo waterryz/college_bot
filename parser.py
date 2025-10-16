@@ -1,57 +1,66 @@
+import re
 import cloudscraper
 from bs4 import BeautifulSoup
 
-def get_grades(iin, password):
-    scraper = cloudscraper.create_scraper()
+def get_grades(login, password):
+    scraper = cloudscraper.create_scraper()  # Обходит Cloudflare
+    login_page = "https://college.snation.kz/kz/tko/login"
+
+    # 1️⃣ Получаем страницу входа, чтобы достать CSRF-токен
+    try:
+        resp = scraper.get(login_page)
+    except Exception:
+        return "⚠️ Серверге қосылу мүмкін емес / Не удалось подключиться к серверу."
+
+    if resp.status_code != 200:
+        return "⚠️ Сервер жауап бермейді / Сервер не отвечает."
+
+    match = re.search(r'name="csrf-token" content="([^"]+)"', resp.text)
+    if not match:
+        return "⚠️ Қате: CSRF-токен табылмады / Ошибка: не найден CSRF-токен."
+    csrf = match.group(1)
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept-Language": "ru,en;q=0.9",
+        "X-CSRF-TOKEN": csrf,
+        "Referer": login_page,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
 
-    # 1️⃣ Получаем токен из страницы логина
-    login_page = scraper.get("https://college.snation.kz/kz/tko/login", headers=headers)
-    soup = BeautifulSoup(login_page.text, "html.parser")
-    token_tag = soup.find("meta", {"name": "csrf-token"})
-    token = token_tag["content"] if token_tag else None
-
-    if not token:
-        return "⚠️ Не удалось получить токен авторизации."
-
-    # 2️⃣ Авторизация
     payload = {
-        "_token": token,
-        "iin": iin,
+        "iin": login,
         "password": password,
+        "remember": "false"
     }
 
-    login_resp = scraper.post("https://college.snation.kz/kz/tko/login", data=payload, headers=headers)
-    if "Қате" in login_resp.text or "error" in login_resp.text.lower():
-        return "❌ Неверный ИИН немесе құпия сөз."
+    # 2️⃣ Отправляем запрос на авторизацию
+    resp = scraper.post(login_page, data=payload, headers=headers)
+    if resp.status_code != 200:
+        return "⚠️ Кіру қатесі / Ошибка входа."
 
-    # 3️⃣ Загружаем страницу журналов
-    journals = scraper.get("https://college.snation.kz/ru/tko/control/journals", headers=headers)
-    if journals.status_code != 200:
-        return "⚠️ Не удалось открыть страницу журналов."
+    # Если ответ содержит слова "қате" — значит, неправильный пароль
+    if "қате" in resp.text.lower() or "error" in resp.text.lower():
+        return "❌ ИИН немесе құпия сөз қате / Неверный ИИН или пароль."
 
-    # 4️⃣ Берем первую ссылку на журнал
-    soup = BeautifulSoup(journals.text, "html.parser")
-    first_journal = soup.find("a", href=lambda href: href and "/control/journals/" in href)
-    if not first_journal:
-        return "📄 Журнал не найден."
+    # 3️⃣ Переходим к журналу
+    journal_url = "https://college.snation.kz/ru/tko/control/journals"
+    response = scraper.get(journal_url, headers=headers)
 
-    journal_url = "https://college.snation.kz" + first_journal["href"]
-    journal_resp = scraper.get(journal_url, headers=headers)
+    if response.status_code != 200:
+        return "⚠️ Журналды ашу мүмкін емес / Не удалось открыть страницу журнала."
 
-    # 5️⃣ Парсим оценки
-    soup = BeautifulSoup(journal_resp.text, "html.parser")
-    dates = [d.get_text(strip=True) for d in soup.select("tr.sc-journal__table--head-row div.sc-journal__table--cell-value")]
-    grades = [g.get_text(strip=True) for g in soup.select("tr.sc-journal__table--row div.sc-journal__table--cell-value")]
+    soup = BeautifulSoup(response.text, "html.parser")
+    table = soup.find("table")
 
-    if not dates or not grades:
-        return "📄 Оценки не найдены."
+    if not table:
+        return "📄 Бағалар табылмады / Оценки не найдены."
 
-    result = "📘 *Сіздің бағаларыңыз:*\n\n"
-    for date, grade in zip(dates, grades):
-        result += f"📅 {date}: {grade or '—'}\n"
+    # 4️⃣ Парсим таблицу
+    rows = table.find_all("tr")
+    result = "📘 *Сіздің журнал:* / *Ваш журнал:* \n\n"
 
-    return result
+    for row in rows[1:]:
+        cols = [c.get_text(strip=True) for c in row.find_all("td")]
+        if cols:
+            result += f"📚 {cols[0]} — {cols[-1]}\n"
+
+    return result or "⚠️ Журнал бос / Журнал пуст."
