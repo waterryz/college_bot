@@ -1,5 +1,5 @@
 aiogram==3.17.0
-pydantic==3.0.0b2
+pydantic==2.9.2
 fastapi==0.115.0
 uvicorn==0.32.0
 requests==2.32.3
