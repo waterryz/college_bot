@@ -18,6 +18,20 @@ def save_users(users):
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, ensure_ascii=False, indent=2)
 
+from aiogram import Router, types
+from parser import get_grades_from_html
+
+router = Router()
+
+@router.message(commands=["grades"])
+async def send_grades(message: types.Message):
+    with open("Журнал.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    result = get_grades_from_html(html_content)
+    await message.answer(result, parse_mode="Markdown")
+
+
 @dp.message(CommandStart())
 async def start(message: types.Message):
     await message.answer("Привет 👋\nОтправь логин и пароль через пробел.\nПример:\n`ivan123 mypassword`", parse_mode="Markdown")
